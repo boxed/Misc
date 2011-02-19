@@ -1,0 +1,12 @@
+I wanted a session handling system that shows a fixed header at the top of the page informing the user that the session has ended and that he will need to login again, but without disturbing the workflow if the user is reading on the page or writing a forum post. To handle this I've made a very simple fixed header library. To use it simply include the javascript and css and call "create_fixed_header(your_html)". To remove the header call "remove_fixed_header()". To complete the login system I described I recommend the jQuery form plugin, which makes it dead easy to handle the form submission and response without reloading the page. You just declare the form as you would normally and then set the event handler. Here's an example:
+
+$('#login_form').ajaxForm(function(data){
+	if (data == 'success') {
+		remove_fixed_header();
+	}
+	else {
+		alert(data);
+	}
+});
+
+Here's a full working demo of the entire thing in operation: http://kodare.net/very_simple/fixed_header/
