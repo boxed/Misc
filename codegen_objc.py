@@ -178,25 +178,39 @@ class SourceGenerator(NodeVisitor):
             self.write('@')
             self.visit(decorator)
 
+    def id_string(self, arg):
+        if hasattr(arg, 'id'):
+            id = arg.id
+        elif hasattr(arg, 'elts'):
+            ids = []
+            for element in arg.elts:
+                ids.append(element.id)
+            id = "(%s)" % ", ".join(ids)
+        else:
+            id = str(arg)
+        return id
+
+
     # Statements
 
     def visit_Assign(self, node):
         if self.inClassDef and not self.inMethodDef:
             for target in node.targets:
-                self.currentClassAttributes.add(target.id)
+                target_id = self.id_string(target)
+                self.currentClassAttributes.add(target_id)
                 if hasattr(node.value, 'func'):
-                    self.currentClassAttributeTypes[target.id] = '%s id' % node.value.func.id
+                    self.currentClassAttributeTypes[target_id] = '%s id' % self.id_string(node.value.func)
                 elif hasattr(node.value, 'elts'):
                     # this attribute is a list!
-                    self.currentClassAttributeTypes[target.id] = 'NSArray *'
+                    self.currentClassAttributeTypes[target_id] = 'NSArray *'
                 elif hasattr(node.value, 'n'):
                     # this attribute is a number!
-                    self.currentClassAttributeTypes[target.id] = repr(type(node.value.n)).split("'")[1]
+                    self.currentClassAttributeTypes[target_id] = repr(type(node.value.n)).split("'")[1]
                 elif hasattr(node.value, 's'):
                     # this attribute is a string!
-                    self.currentClassAttributeTypes[target.id] = 'NSString *'
+                    self.currentClassAttributeTypes[target_id] = 'NSString *'
                 elif hasattr(node.value, 'id') and node.value.id in ('True', 'False'):
-                    self.currentClassAttributeTypes[target.id] = 'BOOL'
+                    self.currentClassAttributeTypes[target_id] = 'BOOL'
                 else:
                     print 'unknown member type:',node.value
                     print dir(node.value)
@@ -243,14 +257,27 @@ class SourceGenerator(NodeVisitor):
             if node.name == '__init__':
                 node.name = 'init'
                 self.write('init ')
-            signature_items = node.name.split('_')[:-1]
-            # assert(len(signature_items) == len(node.args.args))
-            if len(signature_items) != 0:
-                for sig, arg in zip(signature_items, node.args.args[1:]):
-                    self.write(sig)
-                    self.write(':(id)')
-                    self.write(arg.id)
-                    self.write(' ')
+            if len(node.args.args) > 0:
+                decompose_function_name_into_signature = False
+                signature_items = []
+                if decompose_function_name_into_signature:
+                    signature_items = node.name.split('_')[:-1]
+                    # assert(len(signature_items) == len(node.args.args))
+                    decompose_function_name_into_signature_items = (len(signature_items) == len(node.args.args)-1)
+                if decompose_function_name_into_signature:
+                    for sig, arg in zip(signature_items, node.args.args[1:]):
+                        self.write(sig)
+                        self.write(':(id)')
+                        id = self.id_string(arg)
+                        self.write(id)
+                        self.write(' ')
+                elif len(node.args.args) > 1:
+                    for arg in node.args.args[1:]:
+                        sig = self.id_string(arg)
+                        self.write(sig)
+                        self.write(':(id)')
+                        self.write(sig)
+                        self.write(' ')
             else:
                 self.write(node.name)
                 self.write(' ')
