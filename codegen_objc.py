@@ -216,20 +216,18 @@ class SourceGenerator(NodeVisitor):
         self.visit(node.value)
 
     def visit_ImportFrom(self, node):
-        # self.newline(node)
-        # self.write('from %s%s import ' % ('.' * node.level, node.module))
-        # for idx, item in enumerate(node.names):
-        #     if idx:
-        #         self.write(', ')
-        #     self.visit(item)
-        pass
+        self.newline(node)
+        self.write('// Python: from %s%s import ' % ('.' * node.level, node.module))
+        for idx, item in enumerate(node.names):
+            if idx:
+                self.write(', ')
+            self.visit(item)
 
     def visit_Import(self, node):
-        # self.newline(node)
-        # for item in node.names:
-        #     self.write('import ')
-        #     self.visit(item)
-        pass
+        self.newline(node)
+        for item in node.names:
+            self.write('// Python: import ')
+            self.visit(item)
 
     def visit_Expr(self, node):
         self.newline(node)
