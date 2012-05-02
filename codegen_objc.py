@@ -667,9 +667,18 @@ class SourceGenerator(NodeVisitor):
 
 if __name__ == '__main__':
     import ast
+    import os
+    import sys
     
+    if len(sys.argv) != 2:
+        print "Syntax: codegen_objc <input.py>"
+        sys.exit(1)
+
+    input_filename = sys.argv[1]
+    pathname = os.getcwd() + "/" + input_filename
+
     lines = []
-    with open('/Users/boxed/Projects/nameflash/NameFlash_AppDelegate.py', 'r') as f:
+    with open(pathname, 'r') as f:
         for line in f.readlines():
             if line.strip().startswith('#'):
                 lines.append(line.replace('"', '\\"').replace('#', '__comment__ = "', 1)[:-1]+'"\n')
