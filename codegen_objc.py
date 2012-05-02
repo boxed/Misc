@@ -188,13 +188,13 @@ class SourceGenerator(NodeVisitor):
                     self.currentClassAttributeTypes[target.id] = '%s id' % node.value.func.id
                 elif hasattr(node.value, 'elts'):
                     # this attribute is a list!
-                    self.currentClassAttributeTypes[target.id] = 'NSArray*'
+                    self.currentClassAttributeTypes[target.id] = 'NSArray *'
                 elif hasattr(node.value, 'n'):
                     # this attribute is a number!
                     self.currentClassAttributeTypes[target.id] = repr(type(node.value.n)).split("'")[1]
                 elif hasattr(node.value, 's'):
                     # this attribute is a string!
-                    self.currentClassAttributeTypes[target.id] = 'NSString*'
+                    self.currentClassAttributeTypes[target.id] = 'NSString *'
                 elif hasattr(node.value, 'id') and node.value.id in ('True', 'False'):
                     self.currentClassAttributeTypes[target.id] = 'BOOL'
                 else:
