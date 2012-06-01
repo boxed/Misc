@@ -265,34 +265,92 @@ class SourceGenerator(NodeVisitor):
         self.newline(node)
         if self.inClassDef:
             self.write('- (id)')
-            if node.name == '__init__':
-                node.name = 'init'
-                self.write('init ')
-            if len(node.args.args) > 0:
+
+            node_name = node.name
+            function_rename_map = {'__init__':'init', '__repr__':'description'}
+            if node_name in function_rename_map:
+                node_name = function_rename_map[node_name]
+
+            remove_get_method_prefix = True
+
+            #want_capitalization = False
+
+            signature_items = node_name.split('_')
+
+            # We want to keep underscore prefixes and suffixes
+            prefix_count = 0
+            for i in range(len(signature_items)):
+                s = signature_items[i]
+                if len(s) != 0:
+                    prefix_count = i
+
+            suffix_count = 0
+            for i in xrange(len(signature_items)-1, -1, -1):
+                s = signature_items[i]
+                if len(s) != 0:
+                    suffix_count = i
+
+            # Filter out any empty entries
+            signature_items = [s for s in signature_items if len(s) != 0]
+
+            if len(signature_items) > 1:
+                if remove_get_method_prefix and signature_items[0] == "get":
+                    signature_items = signature_items[1:]
+                if not remove_get_method_prefix or len(signature_items) > 1:
+                    signature_items = [signature_items[0]] + [capitalize_first(s) for s in signature_items[1:]]
+
+            # Add underscore prefixes and suffixes back in
+            if prefix_count > 0:
+                signature_items[0] = '_' * prefix_count + signature_items[0]
+
+            if suffix_count > 0:
+                signature_items[0] += '_' * suffix_count
+
+            if node.args.args[0].id == "self":
+                args_without_self = node.args.args[1:]
+            else:
+                args_without_self = node.args.args
+
+            if len(args_without_self) > 0:
                 decompose_function_name_into_signature = False
-                signature_items = []
+
                 if decompose_function_name_into_signature:
-                    signature_items = node.name.split('_')[:-1]
                     # assert(len(signature_items) == len(node.args.args))
-                    decompose_function_name_into_signature_items = (len(signature_items) == len(node.args.args)-1)
+                    decompose_function_name_into_signature_items = (len(signature_items) == len(args_without_self))
+
                 if decompose_function_name_into_signature:
-                    for sig, arg in zip(signature_items, node.args.args[1:]):
+                    for sig, arg in zip(signature_items, args_without_self):
                         self.write(sig)
                         self.write(':(id)')
                         id = id_string(arg)
                         self.write(id)
                         self.write(' ')
                 elif len(node.args.args) > 1:
-                    for arg in node.args.args[1:]:
-                        sig = self.id_string(arg)
-                        self.write(sig)
+                    node_name = ''.join(signature_items)
+                    self.write(node_name)
+
+                    if node_name == "init":
+                        self.write("With")
+
+                    capitalize_next = True
+
+                    for arg in args_without_self:
+                        arg_name = id_string(arg)
+                        arg_sig = arg_name
+                        if capitalize_next:
+                            arg_sig = capitalize_first(arg_sig)
+                            capitalize_next = False
+                        self.write(arg_sig)
                         self.write(':(id)')
-                        self.write(sig)
+                        self.write(arg_name)
                         self.write(' ')
             else:
-                self.write(node.name)
+                self.write(node_name)
                 self.write(' ')
+
             self.write('{')
+
+            node.name = node_name
         else:
             self.write('id %s(' % node.name)
             self.signature(node.args)
