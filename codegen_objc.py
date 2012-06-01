@@ -773,6 +773,7 @@ if __name__ == '__main__':
     input_filename = sys.argv[1]
     pathname = os.getcwd() + "/" + input_filename
 
+    # Pre-processing comments
     lines = []
     with open(pathname, 'r') as f:
         for line in f.readlines():
