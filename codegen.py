@@ -564,6 +564,9 @@ class SourceGenerator(NodeVisitor):
 
 if __name__ == '__main__':
     import ast
+    import os
+    import sys
+    
     code2 = """
 # comment
 class A:
@@ -635,7 +638,41 @@ class NameFlash_AppDelegate(NSObject):
 
 """
 
-    round1 = to_source(ast.parse(code))
-    print round1
-    round2 = to_source(ast.parse(round1))
-    print round1 == round2
+    #round1 = to_source(ast.parse(code))
+    #print round1
+    #round2 = to_source(ast.parse(round1))
+    #print round1 == round2
+    
+    if len(sys.argv) != 2:
+        print "Syntax: codegen <input.py>"
+        sys.exit(1)
+
+    input_filename = sys.argv[1]
+    pathname = os.getcwd() + "/" + input_filename
+
+    # Pre-processing comments
+    lines = []
+    with open(pathname, 'r') as f:
+        for line in f.readlines():
+            if line.strip().startswith('#'):
+                lines.append(line.replace('"', '\\"').replace('#', '__comment__ = "', 1)[:-1]+'"\n')
+            else:
+                lines.append(line)
+    code = ''.join(lines)
+
+    node = ast.parse(code)
+
+    gen_code = to_source(node)
+
+    # Post-processing comments
+    lines = gen_code.split('\n')
+    for l in range(0,len(lines)):
+        line = lines[l]
+        if line.strip().startswith("__comment__ = '"):
+            line = line.replace("__comment__ = '", '#',  1).replace("\\'", "'")[0:-1]
+
+        lines[l] = line
+
+    gen_code = "\n".join(lines)
+
+    print gen_code
