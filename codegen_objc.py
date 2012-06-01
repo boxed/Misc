@@ -98,6 +98,29 @@ def to_source(node, indent_with=' ' * 4, add_line_information=False):
     return '\n'.join(lines)
 
 
+# Utilities
+
+def id_string(arg):
+    if hasattr(arg, 'id'):
+        id = arg.id
+    elif hasattr(arg, 'elts'):
+        ids = []
+        for element in arg.elts:
+            ids.append(element.id)
+        id = "(%s)" % ", ".join(ids)
+    else:
+        id = str(arg)
+    return id
+
+def capitalize_first(s):
+    if len(s) > 1:
+        return s[0].capitalize() + s[1:]
+    elif len(s) > 0:
+        return s.capitalize()
+    else:
+        return s
+
+
 class SourceGenerator(NodeVisitor):
     """This visitor is able to transform a well formed syntax tree into python
     sourcecode.  For more details have a look at the docstring of the
@@ -178,28 +201,16 @@ class SourceGenerator(NodeVisitor):
             self.write('@')
             self.visit(decorator)
 
-    def id_string(self, arg):
-        if hasattr(arg, 'id'):
-            id = arg.id
-        elif hasattr(arg, 'elts'):
-            ids = []
-            for element in arg.elts:
-                ids.append(element.id)
-            id = "(%s)" % ", ".join(ids)
-        else:
-            id = str(arg)
-        return id
-
 
     # Statements
 
     def visit_Assign(self, node):
         if self.inClassDef and not self.inMethodDef:
             for target in node.targets:
-                target_id = self.id_string(target)
+                target_id = id_string(target)
                 self.currentClassAttributes.add(target_id)
                 if hasattr(node.value, 'func'):
-                    self.currentClassAttributeTypes[target_id] = '%s id' % self.id_string(node.value.func)
+                    self.currentClassAttributeTypes[target_id] = '%s id' % id_string(node.value.func)
                 elif hasattr(node.value, 'elts'):
                     # this attribute is a list!
                     self.currentClassAttributeTypes[target_id] = 'NSArray *'
@@ -268,7 +279,7 @@ class SourceGenerator(NodeVisitor):
                     for sig, arg in zip(signature_items, node.args.args[1:]):
                         self.write(sig)
                         self.write(':(id)')
-                        id = self.id_string(arg)
+                        id = id_string(arg)
                         self.write(id)
                         self.write(' ')
                 elif len(node.args.args) > 1:
