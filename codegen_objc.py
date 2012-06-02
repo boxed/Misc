@@ -9,7 +9,7 @@
     :copyright: Copyright 2011 by Anders Hovmöller.
     :license: BSD.
 """
-from ast import *
+from ast import NodeVisitor, If, Name, Pass
 from _ast import Call
 from mapping import BOOLOP_SYMBOLS, BINOP_SYMBOLS, UNARYOP_SYMBOLS, \
      CMPOP_SYMBOLS
