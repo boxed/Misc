@@ -129,6 +129,7 @@ class SourceGenerator(NodeVisitor):
 
     def __init__(self, indent_with, add_line_information=False):
         self.result = []
+        self._new = True
         self.indent_with = indent_with
         self.add_line_information = add_line_information
         self.indentation = 0
@@ -142,11 +143,12 @@ class SourceGenerator(NodeVisitor):
     def write(self, x):
         assert(isinstance(x, str))
         if self.new_lines:
-            if self.result:
+            if not self._new:
                 self.result.append('\n' * self.new_lines)
             self.result.append(self.indent_with * self.indentation)
             self.new_lines = 0
         self.result.append(x)
+        self._new = False
 
     def newline(self, node=None, extra=0):
         self.new_lines = max(self.new_lines, 1 + extra)
@@ -159,6 +161,8 @@ class SourceGenerator(NodeVisitor):
         self.indentation += 1
         for stmt in statements:
             self.visit(stmt)
+        if not statements:
+            self.visit(Pass())
         self.indentation -= 1
         self.newline()
         self.write('}')
@@ -436,7 +440,6 @@ class SourceGenerator(NodeVisitor):
         self.newline(node)
 
     def visit_Print(self, node):
-        # XXX: python 2.6 only
         self.newline(node)
         self.write('print ')
         want_comma = False
@@ -460,6 +463,10 @@ class SourceGenerator(NodeVisitor):
                 self.write(', ')
             self.visit(target)
 
+    def visit_ExceptHandler(self, node):
+        'Not sure why these are different classes, but in py2.7 this is needed'
+        return self.visit_excepthandler(node)
+
     def visit_TryExcept(self, node):
         self.newline(node)
         self.write('@try {')
@@ -473,7 +480,7 @@ class SourceGenerator(NodeVisitor):
         self.write('@try {')
         self.body(node.body)
         self.write('}')
-        self.newline()
+        self.newline(node)
         self.write('@finally {')
         self.body(node.finalbody)
         self.write('}')
@@ -488,12 +495,11 @@ class SourceGenerator(NodeVisitor):
 
     def visit_Return(self, node):
         self.newline(node)
+        self.write('return')
         if node.value is not None:
-            self.write('return ')
+            self.write(' ')
             self.visit(node.value)
-        else:
-            self.write('return')
-        
+
     def visit_Break(self, node):
         self.newline(node)
         self.write('break')
@@ -715,18 +721,19 @@ class SourceGenerator(NodeVisitor):
         self.write('}')
 
     def visit_IfExp(self, node):
+        self.write('(')
         self.visit(node.test)
-        self.write('? ')
+        self.write(' ? ')
         self.visit(node.body)
-        self.write(': ')
+        self.write(' : ')
         self.visit(node.orelse)
+        self.write(')')
 
     def visit_Starred(self, node):
         self.write('*')
         self.visit(node.value)
 
     def visit_Repr(self, node):
-        # XXX: python 2.6 only
         self.write('`')
         self.visit(node.value)
         self.write('`')
@@ -748,7 +755,7 @@ class SourceGenerator(NodeVisitor):
                 self.write(' if ')
                 self.visit(if_)
 
-    def visit_ExceptHandler(self, node):
+    def visit_excepthandler(self, node):
         self.newline(node)
         self.write('@catch (')
         if node.type is not None:
