@@ -379,9 +379,10 @@ class SourceGenerator(NodeVisitor):
                 self.write(') {')
                 self.body(node.body)
             else:
-                self.newline()
-                self.write('else {')
-                self.body(else_)
+                if len(else_) > 0:
+                    self.newline()
+                    self.write('else {')
+                    self.body(else_)
                 break
 
     def visit_For(self, node):
