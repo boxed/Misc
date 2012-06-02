@@ -3,10 +3,10 @@
     codegen
     ~~~~~~~
 
-    Extension to ast that allow ast -> python code generation.
+    AST to Python code generator.
 
-    :copyright: Copyright 2008 by Armin Ronacher.
-    :license: BSD.
+    :copyright: (c) Copyright 2008-2011 by Armin Ronacher.
+    :license: BSD, see LICENSE for more details.
 """
 from StringIO import StringIO
 from ast import NodeVisitor, If, Name, Pass

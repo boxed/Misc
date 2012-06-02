@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 """
     objc_codegen
-    ~~~~~~~
+    ~~~~~~~~~~~~
 
-    Extension to ast that allow ast -> objective-c code generation. Based on "codegen", a tool for converting an ast to python, by Armin Ronacher.
+    AST to Objective-C code generator.
+    Based on "codegen", a tool for converting an ast to python, by Armin Ronacher.
 
     :copyright: Copyright 2008 by Armin Ronacher.
     :copyright: Copyright 2011 by Anders Hovmöller.
-    :license: BSD.
+    :copyright: Copyright 2012 by Jan Weiß.
+    :license: BSD, see LICENSE for more details.
 """
 from StringIO import StringIO
 from ast import NodeVisitor, If, Name, Pass
