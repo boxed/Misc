@@ -8,7 +8,7 @@
     :copyright: Copyright 2008 by Armin Ronacher.
     :license: BSD.
 """
-from ast import *
+from ast import NodeVisitor, If, Name, Pass
 from mapping import BOOLOP_SYMBOLS, BINOP_SYMBOLS, UNARYOP_SYMBOLS, \
      CMPOP_SYMBOLS
 
