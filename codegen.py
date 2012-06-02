@@ -88,6 +88,7 @@ class SourceGenerator(NodeVisitor):
 
     def __init__(self, indent_with, add_line_information=False):
         self.result = []
+        self._new = True
         self.indent_with = indent_with
         self.add_line_information = add_line_information
         self.indentation = 0
@@ -96,11 +97,12 @@ class SourceGenerator(NodeVisitor):
     def write(self, x):
         assert(isinstance(x, str))
         if self.new_lines:
-            if self.result:
+            if not self._new:
                 self.result.append('\n' * self.new_lines)
             self.result.append(self.indent_with * self.indentation)
             self.new_lines = 0
         self.result.append(x)
+        self._new = False
 
     def newline(self, node=None, extra=0):
         self.new_lines = max(self.new_lines, 1 + extra)
@@ -113,6 +115,8 @@ class SourceGenerator(NodeVisitor):
         self.indentation += 1
         for stmt in statements:
             self.visit(stmt)
+        if not statements:
+            self.visit(Pass())
         self.indentation -= 1
 
     def body_or_else(self, node):
@@ -210,7 +214,21 @@ class SourceGenerator(NodeVisitor):
         for base in node.bases:
             paren_or_comma()
             self.visit(base)
-        
+        # XXX: the 'if' here is used to keep this module compatible
+        #      with python 2.6.
+        if hasattr(node, 'keywords'):
+            for keyword in node.keywords:
+                paren_or_comma()
+                self.write(keyword.arg + '=')
+                self.visit(keyword.value)
+            if node.starargs is not None:
+                paren_or_comma()
+                self.write('*')
+                self.visit(node.starargs)
+            if node.kwargs is not None:
+                paren_or_comma()
+                self.write('**')
+                self.visit(node.kwargs)
         self.write(have_args and '):' or ':')
         self.body(node.body)
 
@@ -267,7 +285,6 @@ class SourceGenerator(NodeVisitor):
         self.write('pass')
 
     def visit_Print(self, node):
-        # XXX: python 2.6 only
         self.newline(node)
         self.write('print ')
         want_comma = False
@@ -290,6 +307,10 @@ class SourceGenerator(NodeVisitor):
             if idx:
                 self.write(', ')
             self.visit(target)
+
+    def visit_ExceptHandler(self, node):
+        'Not sure why these are different classes, but in py2.7 this is needed'
+        return self.visit_excepthandler(node)
 
     def visit_TryExcept(self, node):
         self.newline(node)
@@ -316,11 +337,10 @@ class SourceGenerator(NodeVisitor):
 
     def visit_Return(self, node):
         self.newline(node)
+        self.write('return')
         if node.value is not None:
-            self.write('return ')
+            self.write(' ')
             self.visit(node.value)
-        else:
-            self.write('return')
 
     def visit_Break(self, node):
         self.newline(node)
@@ -517,18 +537,19 @@ class SourceGenerator(NodeVisitor):
         self.write('}')
 
     def visit_IfExp(self, node):
+        self.write('(')
         self.visit(node.body)
         self.write(' if ')
         self.visit(node.test)
         self.write(' else ')
         self.visit(node.orelse)
+        self.write(')')
 
     def visit_Starred(self, node):
         self.write('*')
         self.visit(node.value)
 
     def visit_Repr(self, node):
-        # XXX: python 2.6 only
         self.write('`')
         self.visit(node.value)
         self.write('`')
@@ -550,7 +571,7 @@ class SourceGenerator(NodeVisitor):
                 self.write(' if ')
                 self.visit(if_)
 
-    def visit_ExceptHandler(self, node):
+    def visit_excepthandler(self, node):
         self.newline(node)
         self.write('except')
         if node.type is not None:
