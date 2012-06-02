@@ -9,6 +9,7 @@
     :copyright: Copyright 2011 by Anders Hovmöller.
     :license: BSD.
 """
+from StringIO import StringIO
 from ast import NodeVisitor, If, Name, Pass
 from _ast import Call
 from mapping import BOOLOP_SYMBOLS, BINOP_SYMBOLS, UNARYOP_SYMBOLS, \
@@ -33,25 +34,40 @@ def to_source(node, indent_with=' ' * 4, add_line_information=False):
     of the nodes are added to the output.  This can be used to spot wrong line
     number information of statement nodes.
     """
-    generator = SourceGenerator(indent_with, add_line_information)
+    out = StringIO()
+    generator = SourceGenerator(indent_with, out, add_line_information)
     generator.visit(node)
-    lines = ''.join(generator.result).split('\n')
+    
+    lines = out.getvalue().split('\n')
+    out.truncate(0)
+    
+    # Post-processing comments
     for i in xrange(len(lines)):
         line = lines[i]
-        if not line.strip() == '' and not line.strip().startswith('@') and not line.strip().endswith('}') and not line.strip().endswith('{'):
-            lines[i] = line+';'
-        if '__comment__ = @"' in line:
-            lines[i] = line[:-1].replace('__comment__ = @"', '//')
+
+        if line.strip().startswith('__comment__ = @"'):
+            line = line.replace('__comment__ = @"', '//').replace("\\'", "'")[:-1]
+
+        line_striped = line.strip()
+        if not line_striped == '' and not line_striped.startswith('//') and not line_striped.startswith('@') and not line_striped.endswith('}') and not line_striped.endswith('{'):
+            line = line+';'
+
+        lines[i] = line
+
+
     for key, attribs in generator.classAttributes.items():
-        print '@interface %s {' % key
+        out.write('@interface %s {' % key)
         for v in sorted(attribs):
             t = 'id'
             if v in generator.currentClassAttributeTypes:
                 t = generator.currentClassAttributeTypes[v]
-            print '%s%s %s;' % (indent_with, t, v)
-        print '}'
-        print '\n@end\n\n'
-    return '\n'.join(lines)
+            out.write('%s%s %s;' % (indent_with, t, v))
+        out.write('}')
+        out.write('\n@end\n\n')
+    
+    interface = out.getvalue()
+    
+    return interface + '\n'.join(lines)
 
 
 # Utilities
@@ -83,8 +99,8 @@ class SourceGenerator(NodeVisitor):
     `node_to_source` function.
     """
 
-    def __init__(self, indent_with, add_line_information=False):
-        self.result = []
+    def __init__(self, indent_with, stream, add_line_information=False):
+        self.stream = stream
         self._new = True
         self.indent_with = indent_with
         self.add_line_information = add_line_information
@@ -100,10 +116,10 @@ class SourceGenerator(NodeVisitor):
         assert(isinstance(x, str))
         if self.new_lines:
             if not self._new:
-                self.result.append('\n' * self.new_lines)
-            self.result.append(self.indent_with * self.indentation)
+                self.stream.write('\n' * self.new_lines)
+            self.stream.write(self.indent_with * self.indentation)
             self.new_lines = 0
-        self.result.append(x)
+        self.stream.write(x)
         self._new = False
 
     def newline(self, node=None, extra=0):
@@ -741,10 +757,10 @@ if __name__ == '__main__':
     with open(pathname, 'r') as f:
         for line in f.readlines():
             if line.strip().startswith('#'):
-                lines.append(line.replace('"', '\\"').replace('#', '__comment__ = "', 1)[:-1]+'"\n')
+                lines.append(line.replace('"', '\\"').replace('#', '__comment__ = "', 1)[:-1]+'"')
             else:
                 lines.append(line)
-    code = ''.join(lines)
+    code = "\n".join(lines)
 
     code2 = """
 # comment
