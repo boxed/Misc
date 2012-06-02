@@ -201,7 +201,7 @@ class SourceGenerator(NodeVisitor):
                 elif hasattr(node.value, 'id') and node.value.id in ('True', 'False'):
                     self.currentClassAttributeTypes[target_id] = 'BOOL'
                 else:
-                    print 'unknown member type:',node.value
+                    print 'unknown member type:', node.value
                     print dir(node.value)
         else:
             self.newline(node)
