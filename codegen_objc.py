@@ -1,62 +1,21 @@
 # -*- coding: utf-8 -*-
 """
     objc_codegen
-    ~~~~~~~
+    ~~~~~~~~~~~~
 
-    Extension to ast that allow ast -> objective-c code generation. Based on "codegen", a tool for converting an ast to python, by Armin Ronacher.
+    AST to Objective-C code generator.
+    Based on "codegen", a tool for converting an ast to python, by Armin Ronacher.
 
     :copyright: Copyright 2008 by Armin Ronacher.
     :copyright: Copyright 2011 by Anders Hovmöller.
-    :license: BSD.
+    :copyright: Copyright 2012 by Jan Weiß.
+    :license: BSD, see LICENSE for more details.
 """
-from ast import *
+from StringIO import StringIO
+from ast import NodeVisitor, If, Name, Pass
 from _ast import Call
-
-
-BOOLOP_SYMBOLS = {
-    And:        '&&',
-    Or:         '||'
-}
-
-BINOP_SYMBOLS = {
-    Add:        '+',
-    Sub:        '-',
-    Mult:       '*',
-    Div:        '/',
-    FloorDiv:   '//',
-    Mod:        '%',
-    LShift:     '<<',
-    RShift:     '>>',
-    BitOr:      '|',
-    BitAnd:     '&',
-    BitXor:     '^'
-}
-
-CMPOP_SYMBOLS = {
-    Eq:         '==',
-    Gt:         '>',
-    GtE:        '>=',
-    In:         'in',
-    Is:         'is',
-    IsNot:      'is not',
-    Lt:         '<',
-    LtE:        '<=',
-    NotEq:      '!=',
-    NotIn:      'not in'
-}
-
-UNARYOP_SYMBOLS = {
-    Invert:     '~',
-    Not:        '!',
-    UAdd:       '+',
-    USub:       '-'
-}
-
-ALL_SYMBOLS = {}
-ALL_SYMBOLS.update(BOOLOP_SYMBOLS)
-ALL_SYMBOLS.update(BINOP_SYMBOLS)
-ALL_SYMBOLS.update(CMPOP_SYMBOLS)
-ALL_SYMBOLS.update(UNARYOP_SYMBOLS)
+from mapping import BOOLOP_SYMBOLS, BINOP_SYMBOLS, UNARYOP_SYMBOLS, \
+     CMPOP_SYMBOLS
 
 
 def to_source(node, indent_with=' ' * 4, add_line_information=False):
@@ -77,25 +36,63 @@ def to_source(node, indent_with=' ' * 4, add_line_information=False):
     of the nodes are added to the output.  This can be used to spot wrong line
     number information of statement nodes.
     """
-    generator = SourceGenerator(indent_with, add_line_information)
+    out = StringIO()
+    generator = SourceGenerator(indent_with, out, add_line_information)
     generator.visit(node)
-    lines = ''.join(generator.result).split('\n')
+    
+    lines = out.getvalue().split('\n')
+    out.truncate(0)
+    
+    # Post-processing comments
     for i in xrange(len(lines)):
         line = lines[i]
-        if not line.strip() == '' and not line.strip().startswith('@') and not line.strip().endswith('}') and not line.strip().endswith('{'):
-            lines[i] = line+';'
-        if '__comment__ = @"' in line:
-            lines[i] = line[:-1].replace('__comment__ = @"', '//')
+
+        if line.strip().startswith('__comment__ = @"'):
+            line = line.replace('__comment__ = @"', '//').replace("\\'", "'")[:-1]
+
+        line_striped = line.strip()
+        if not line_striped == '' and not line_striped.startswith('//') and not line_striped.startswith('@') and not line_striped.endswith('}') and not line_striped.endswith('{'):
+            line = line+';'
+
+        lines[i] = line
+
+
     for key, attribs in generator.classAttributes.items():
-        print '@interface %s {' % key
+        out.write('@interface %s {' % key)
         for v in sorted(attribs):
             t = 'id'
             if v in generator.currentClassAttributeTypes:
                 t = generator.currentClassAttributeTypes[v]
-            print '%s%s %s;' % (indent_with, t, v)
-        print '}'
-        print '\n@end\n\n'
-    return '\n'.join(lines)
+            out.write('%s%s %s;' % (indent_with, t, v))
+        out.write('}')
+        out.write('\n@end\n\n')
+    
+    interface = out.getvalue()
+    
+    return interface + '\n'.join(lines)
+
+
+# Utilities
+
+def id_string(arg):
+    if hasattr(arg, 'id'):
+        id = arg.id
+    elif hasattr(arg, 'elts'):
+        ids = []
+        for element in arg.elts:
+            ids.append(element.id)
+        id = "(%s)" % ", ".join(ids)
+    else:
+        id = str(arg)
+    return id
+
+def capitalize_first(s):
+    if len(s) > 1:
+        return s[0].capitalize() + s[1:]
+    elif len(s) > 0:
+        return s.capitalize()
+    else:
+        return s
 
 
 class SourceGenerator(NodeVisitor):
@@ -104,8 +101,9 @@ class SourceGenerator(NodeVisitor):
     `node_to_source` function.
     """
 
-    def __init__(self, indent_with, add_line_information=False):
-        self.result = []
+    def __init__(self, indent_with, stream, add_line_information=False):
+        self.stream = stream
+        self._new = True
         self.indent_with = indent_with
         self.add_line_information = add_line_information
         self.indentation = 0
@@ -119,11 +117,12 @@ class SourceGenerator(NodeVisitor):
     def write(self, x):
         assert(isinstance(x, str))
         if self.new_lines:
-            if self.result:
-                self.result.append('\n' * self.new_lines)
-            self.result.append(self.indent_with * self.indentation)
+            if not self._new:
+                self.stream.write('\n' * self.new_lines)
+            self.stream.write(self.indent_with * self.indentation)
             self.new_lines = 0
-        self.result.append(x)
+        self.stream.write(x)
+        self._new = False
 
     def newline(self, node=None, extra=0):
         self.new_lines = max(self.new_lines, 1 + extra)
@@ -136,6 +135,8 @@ class SourceGenerator(NodeVisitor):
         self.indentation += 1
         for stmt in statements:
             self.visit(stmt)
+        if not statements:
+            self.visit(Pass())
         self.indentation -= 1
         self.newline()
         self.write('}')
@@ -178,27 +179,29 @@ class SourceGenerator(NodeVisitor):
             self.write('@')
             self.visit(decorator)
 
+
     # Statements
 
     def visit_Assign(self, node):
         if self.inClassDef and not self.inMethodDef:
             for target in node.targets:
-                self.currentClassAttributes.add(target.id)
+                target_id = id_string(target)
+                self.currentClassAttributes.add(target_id)
                 if hasattr(node.value, 'func'):
-                    self.currentClassAttributeTypes[target.id] = '%s id' % node.value.func.id
+                    self.currentClassAttributeTypes[target_id] = '%s id' % id_string(node.value.func)
                 elif hasattr(node.value, 'elts'):
                     # this attribute is a list!
-                    self.currentClassAttributeTypes[target.id] = 'NSArray*'
+                    self.currentClassAttributeTypes[target_id] = 'NSArray *'
                 elif hasattr(node.value, 'n'):
                     # this attribute is a number!
-                    self.currentClassAttributeTypes[target.id] = repr(type(node.value.n)).split("'")[1]
+                    self.currentClassAttributeTypes[target_id] = repr(type(node.value.n)).split("'")[1]
                 elif hasattr(node.value, 's'):
                     # this attribute is a string!
-                    self.currentClassAttributeTypes[target.id] = 'NSString*'
+                    self.currentClassAttributeTypes[target_id] = 'NSString *'
                 elif hasattr(node.value, 'id') and node.value.id in ('True', 'False'):
-                    self.currentClassAttributeTypes[target.id] = 'BOOL'
+                    self.currentClassAttributeTypes[target_id] = 'BOOL'
                 else:
-                    print 'unknown member type:',node.value
+                    print 'unknown member type:', node.value
                     print dir(node.value)
         else:
             self.newline(node)
@@ -216,20 +219,18 @@ class SourceGenerator(NodeVisitor):
         self.visit(node.value)
 
     def visit_ImportFrom(self, node):
-        # self.newline(node)
-        # self.write('from %s%s import ' % ('.' * node.level, node.module))
-        # for idx, item in enumerate(node.names):
-        #     if idx:
-        #         self.write(', ')
-        #     self.visit(item)
-        pass
+        self.newline(node)
+        self.write('// Python: from %s%s import ' % ('.' * node.level, node.module))
+        for idx, item in enumerate(node.names):
+            if idx:
+                self.write(', ')
+            self.visit(item)
 
     def visit_Import(self, node):
-        # self.newline(node)
-        # for item in node.names:
-        #     self.write('import ')
-        #     self.visit(item)
-        pass
+        self.newline(node)
+        for item in node.names:
+            self.write('// Python: import ')
+            self.visit(item)
 
     def visit_Expr(self, node):
         self.newline(node)
@@ -242,21 +243,92 @@ class SourceGenerator(NodeVisitor):
         self.newline(node)
         if self.inClassDef:
             self.write('- (id)')
-            if node.name == '__init__':
-                node.name = 'init'
-                self.write('init ')
-            signature_items = node.name.split('_')[:-1]
-            # assert(len(signature_items) == len(node.args.args))
-            if len(signature_items) != 0:
-                for sig, arg in zip(signature_items, node.args.args[1:]):
-                    self.write(sig)
-                    self.write(':(id)')
-                    self.write(arg.id)
-                    self.write(' ')
+
+            node_name = node.name
+            function_rename_map = {'__init__':'init', '__repr__':'description'}
+            if node_name in function_rename_map:
+                node_name = function_rename_map[node_name]
+
+            remove_get_method_prefix = True
+
+            #want_capitalization = False
+
+            signature_items = node_name.split('_')
+
+            # We want to keep underscore prefixes and suffixes
+            prefix_count = 0
+            for i in range(len(signature_items)):
+                s = signature_items[i]
+                if len(s) != 0:
+                    prefix_count = i
+
+            suffix_count = 0
+            for i in xrange(len(signature_items)-1, -1, -1):
+                s = signature_items[i]
+                if len(s) != 0:
+                    suffix_count = i
+
+            # Filter out any empty entries
+            signature_items = [s for s in signature_items if len(s) != 0]
+
+            if len(signature_items) > 1:
+                if remove_get_method_prefix and signature_items[0] == "get":
+                    signature_items = signature_items[1:]
+                if not remove_get_method_prefix or len(signature_items) > 1:
+                    signature_items = [signature_items[0]] + [capitalize_first(s) for s in signature_items[1:]]
+
+            # Add underscore prefixes and suffixes back in
+            if prefix_count > 0:
+                signature_items[0] = '_' * prefix_count + signature_items[0]
+
+            if suffix_count > 0:
+                signature_items[0] += '_' * suffix_count
+
+            if node.args.args[0].id == "self":
+                args_without_self = node.args.args[1:]
             else:
-                self.write(node.name)
+                args_without_self = node.args.args
+
+            if len(args_without_self) > 0:
+                decompose_function_name_into_signature = False
+
+                if decompose_function_name_into_signature:
+                    # assert(len(signature_items) == len(node.args.args))
+                    decompose_function_name_into_signature_items = (len(signature_items) == len(args_without_self))
+
+                if decompose_function_name_into_signature:
+                    for sig, arg in zip(signature_items, args_without_self):
+                        self.write(sig)
+                        self.write(':(id)')
+                        id = id_string(arg)
+                        self.write(id)
+                        self.write(' ')
+                elif len(node.args.args) > 1:
+                    node_name = ''.join(signature_items)
+                    self.write(node_name)
+
+                    if node_name == "init":
+                        self.write("With")
+
+                    capitalize_next = True
+
+                    for arg in args_without_self:
+                        arg_name = id_string(arg)
+                        arg_sig = arg_name
+                        if capitalize_next:
+                            arg_sig = capitalize_first(arg_sig)
+                            capitalize_next = False
+                        self.write(arg_sig)
+                        self.write(':(id)')
+                        self.write(arg_name)
+                        self.write(' ')
+            else:
+                self.write(node_name)
                 self.write(' ')
+
             self.write('{')
+
+            node.name = node_name
         else:
             self.write('id %s(' % node.name)
             self.signature(node.args)
@@ -307,9 +379,10 @@ class SourceGenerator(NodeVisitor):
                 self.write(') {')
                 self.body(node.body)
             else:
-                self.newline()
-                self.write('else {')
-                self.body(else_)
+                if len(else_) > 0:
+                    self.newline()
+                    self.write('else {')
+                    self.body(else_)
                 break
 
     def visit_For(self, node):
@@ -342,7 +415,6 @@ class SourceGenerator(NodeVisitor):
         self.newline(node)
 
     def visit_Print(self, node):
-        # XXX: python 2.6 only
         self.newline(node)
         self.write('print ')
         want_comma = False
@@ -366,6 +438,10 @@ class SourceGenerator(NodeVisitor):
                 self.write(', ')
             self.visit(target)
 
+    def visit_ExceptHandler(self, node):
+        'Not sure why these are different classes, but in py2.7 this is needed'
+        return self.visit_excepthandler(node)
+
     def visit_TryExcept(self, node):
         self.newline(node)
         self.write('@try {')
@@ -379,7 +455,7 @@ class SourceGenerator(NodeVisitor):
         self.write('@try {')
         self.body(node.body)
         self.write('}')
-        self.newline()
+        self.newline(node)
         self.write('@finally {')
         self.body(node.finalbody)
         self.write('}')
@@ -394,12 +470,11 @@ class SourceGenerator(NodeVisitor):
 
     def visit_Return(self, node):
         self.newline(node)
+        self.write('return')
         if node.value is not None:
-            self.write('return ')
+            self.write(' ')
             self.visit(node.value)
-        else:
-            self.write('return')
-        
+
     def visit_Break(self, node):
         self.newline(node)
         self.write('break')
@@ -621,18 +696,19 @@ class SourceGenerator(NodeVisitor):
         self.write('}')
 
     def visit_IfExp(self, node):
+        self.write('(')
         self.visit(node.test)
-        self.write('? ')
+        self.write(' ? ')
         self.visit(node.body)
-        self.write(': ')
+        self.write(' : ')
         self.visit(node.orelse)
+        self.write(')')
 
     def visit_Starred(self, node):
         self.write('*')
         self.visit(node.value)
 
     def visit_Repr(self, node):
-        # XXX: python 2.6 only
         self.write('`')
         self.visit(node.value)
         self.write('`')
@@ -654,7 +730,7 @@ class SourceGenerator(NodeVisitor):
                 self.write(' if ')
                 self.visit(if_)
 
-    def visit_ExceptHandler(self, node):
+    def visit_excepthandler(self, node):
         self.newline(node)
         self.write('@catch (')
         if node.type is not None:
@@ -669,15 +745,25 @@ class SourceGenerator(NodeVisitor):
 
 if __name__ == '__main__':
     import ast
+    import os
+    import sys
     
+    if len(sys.argv) != 2:
+        print "Syntax: codegen_objc <input.py>"
+        sys.exit(1)
+
+    input_filename = sys.argv[1]
+    pathname = os.getcwd() + "/" + input_filename
+
+    # Pre-processing comments
     lines = []
-    with open('/Users/boxed/Projects/nameflash/NameFlash_AppDelegate.py', 'r') as f:
+    with open(pathname, 'r') as f:
         for line in f.readlines():
             if line.strip().startswith('#'):
-                lines.append(line.replace('"', '\\"').replace('#', '__comment__ = "', 1)[:-1]+'"\n')
+                lines.append(line.replace('"', '\\"').replace('#', '__comment__ = "', 1)[:-1]+'"')
             else:
                 lines.append(line)
-    code = ''.join(lines)
+    code = "\n".join(lines)
 
     code2 = """
 # comment

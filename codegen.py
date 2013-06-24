@@ -3,58 +3,15 @@
     codegen
     ~~~~~~~
 
-    Extension to ast that allow ast -> python code generation.
+    AST to Python code generator.
 
-    :copyright: Copyright 2008 by Armin Ronacher.
-    :license: BSD.
+    :copyright: (c) Copyright 2008-2011 by Armin Ronacher.
+    :license: BSD, see LICENSE for more details.
 """
-from ast import *
-
-
-BOOLOP_SYMBOLS = {
-    And:        'and',
-    Or:         'or'
-}
-
-BINOP_SYMBOLS = {
-    Add:        '+',
-    Sub:        '-',
-    Mult:       '*',
-    Div:        '/',
-    FloorDiv:   '//',
-    Mod:        '%',
-    LShift:     '<<',
-    RShift:     '>>',
-    BitOr:      '|',
-    BitAnd:     '&',
-    BitXor:     '^'
-}
-
-CMPOP_SYMBOLS = {
-    Eq:         '==',
-    Gt:         '>',
-    GtE:        '>=',
-    In:         'in',
-    Is:         'is',
-    IsNot:      'is not',
-    Lt:         '<',
-    LtE:        '<=',
-    NotEq:      '!=',
-    NotIn:      'not in'
-}
-
-UNARYOP_SYMBOLS = {
-    Invert:     '~',
-    Not:        'not',
-    UAdd:       '+',
-    USub:       '-'
-}
-
-ALL_SYMBOLS = {}
-ALL_SYMBOLS.update(BOOLOP_SYMBOLS)
-ALL_SYMBOLS.update(BINOP_SYMBOLS)
-ALL_SYMBOLS.update(CMPOP_SYMBOLS)
-ALL_SYMBOLS.update(UNARYOP_SYMBOLS)
+from StringIO import StringIO
+from ast import NodeVisitor, If, Name, Pass
+from mapping import BOOLOP_SYMBOLS, BINOP_SYMBOLS, UNARYOP_SYMBOLS, \
+     CMPOP_SYMBOLS
 
 
 def to_source(node, indent_with=' ' * 4, add_line_information=False):
@@ -75,9 +32,22 @@ def to_source(node, indent_with=' ' * 4, add_line_information=False):
     of the nodes are added to the output.  This can be used to spot wrong line
     number information of statement nodes.
     """
-    generator = SourceGenerator(indent_with, add_line_information)
+    out = StringIO()
+    generator = SourceGenerator(indent_with, out, add_line_information)
     generator.visit(node)
-    return ''.join(generator.result)
+    
+    gen_code = out.getvalue()
+    lines = gen_code.split('\n')
+    
+    # Post-processing comments
+    for i in xrange(len(lines)):
+        line = lines[i]
+        if line.strip().startswith("__comment__ = '"):
+            line = line.replace("__comment__ = '", '#',  1).replace("\\'", "'")[0:-1]
+            
+        lines[i] = line
+
+    return '\n'.join(lines)
 
 
 class SourceGenerator(NodeVisitor):
@@ -86,8 +56,9 @@ class SourceGenerator(NodeVisitor):
     `node_to_source` function.
     """
 
-    def __init__(self, indent_with, add_line_information=False):
-        self.result = []
+    def __init__(self, indent_with, stream, add_line_information=False):
+        self.stream = stream
+        self._new = True
         self.indent_with = indent_with
         self.add_line_information = add_line_information
         self.indentation = 0
@@ -96,11 +67,12 @@ class SourceGenerator(NodeVisitor):
     def write(self, x):
         assert(isinstance(x, str))
         if self.new_lines:
-            if self.result:
-                self.result.append('\n' * self.new_lines)
-            self.result.append(self.indent_with * self.indentation)
+            if not self._new:
+                self.stream.write('\n' * self.new_lines)
+            self.stream.write(self.indent_with * self.indentation)
             self.new_lines = 0
-        self.result.append(x)
+        self.stream.write(x)
+        self._new = False
 
     def newline(self, node=None, extra=0):
         self.new_lines = max(self.new_lines, 1 + extra)
@@ -113,6 +85,8 @@ class SourceGenerator(NodeVisitor):
         self.indentation += 1
         for stmt in statements:
             self.visit(stmt)
+        if not statements:
+            self.visit(Pass())
         self.indentation -= 1
 
     def body_or_else(self, node):
@@ -210,7 +184,21 @@ class SourceGenerator(NodeVisitor):
         for base in node.bases:
             paren_or_comma()
             self.visit(base)
-        
+        # XXX: the 'if' here is used to keep this module compatible
+        #      with python 2.6.
+        if hasattr(node, 'keywords'):
+            for keyword in node.keywords:
+                paren_or_comma()
+                self.write(keyword.arg + '=')
+                self.visit(keyword.value)
+            if node.starargs is not None:
+                paren_or_comma()
+                self.write('*')
+                self.visit(node.starargs)
+            if node.kwargs is not None:
+                paren_or_comma()
+                self.write('**')
+                self.visit(node.kwargs)
         self.write(have_args and '):' or ':')
         self.body(node.body)
 
@@ -267,7 +255,6 @@ class SourceGenerator(NodeVisitor):
         self.write('pass')
 
     def visit_Print(self, node):
-        # XXX: python 2.6 only
         self.newline(node)
         self.write('print ')
         want_comma = False
@@ -290,6 +277,10 @@ class SourceGenerator(NodeVisitor):
             if idx:
                 self.write(', ')
             self.visit(target)
+
+    def visit_ExceptHandler(self, node):
+        'Not sure why these are different classes, but in py2.7 this is needed'
+        return self.visit_excepthandler(node)
 
     def visit_TryExcept(self, node):
         self.newline(node)
@@ -316,11 +307,10 @@ class SourceGenerator(NodeVisitor):
 
     def visit_Return(self, node):
         self.newline(node)
+        self.write('return')
         if node.value is not None:
-            self.write('return ')
+            self.write(' ')
             self.visit(node.value)
-        else:
-            self.write('return')
 
     def visit_Break(self, node):
         self.newline(node)
@@ -517,18 +507,19 @@ class SourceGenerator(NodeVisitor):
         self.write('}')
 
     def visit_IfExp(self, node):
+        self.write('(')
         self.visit(node.body)
         self.write(' if ')
         self.visit(node.test)
         self.write(' else ')
         self.visit(node.orelse)
+        self.write(')')
 
     def visit_Starred(self, node):
         self.write('*')
         self.visit(node.value)
 
     def visit_Repr(self, node):
-        # XXX: python 2.6 only
         self.write('`')
         self.visit(node.value)
         self.write('`')
@@ -550,7 +541,7 @@ class SourceGenerator(NodeVisitor):
                 self.write(' if ')
                 self.visit(if_)
 
-    def visit_ExceptHandler(self, node):
+    def visit_excepthandler(self, node):
         self.newline(node)
         self.write('except')
         if node.type is not None:
@@ -564,6 +555,9 @@ class SourceGenerator(NodeVisitor):
 
 if __name__ == '__main__':
     import ast
+    import os
+    import sys
+    
     code2 = """
 # comment
 class A:
@@ -635,7 +629,28 @@ class NameFlash_AppDelegate(NSObject):
 
 """
 
-    round1 = to_source(ast.parse(code))
-    print round1
-    round2 = to_source(ast.parse(round1))
-    print round1 == round2
+    #round1 = to_source(ast.parse(code))
+    #print round1
+    #round2 = to_source(ast.parse(round1))
+    #print round1 == round2
+    
+    if len(sys.argv) != 2:
+        print "Syntax: codegen <input.py>"
+        sys.exit(1)
+
+    input_filename = sys.argv[1]
+    pathname = os.getcwd() + "/" + input_filename
+
+    # Pre-processing comments
+    lines = []
+    with open(pathname, 'r') as f:
+        for line in f.readlines():
+            if line.strip().startswith('#'):
+                lines.append(line.replace('"', '\\"').replace('#', '__comment__ = "', 1)[:-1]+'"\n')
+            else:
+                lines.append(line)
+    code = ''.join(lines)
+
+    node = ast.parse(code)
+
+    print to_source(node)
